@@ -15,8 +15,11 @@ def filter_datum(fields: List[str], redaction: str, message: str,
                  separator: str) -> str:
     """Returns the log message obfuscated with redaction for PII fields"""
     for field in fields:
-        message = re.sub(f"{field}=.*?{separator}",
-                         f"{field}={redaction}{separator}", message)
+        message = re.sub(
+            f"{field}=.*?{separator}",
+            f"{field}={redaction}{separator}",
+            message
+        )
     return message
 
 
@@ -35,8 +38,12 @@ class RedactingFormatter(logging.Formatter):
         self.fields = fields
 
     def format(self, record: logging.LogRecord) -> str:
-        record.msg = filter_datum(self.fields, self.REDACTION,
-                                  record.getMessage(), self.SEPARATOR)
+        record.msg = filter_datum(
+            self.fields,
+            self.REDACTION,
+            record.getMessage(),
+            self.SEPARATOR
+        )
         return super().format(record)
 
 
@@ -50,24 +57,35 @@ def get_logger() -> logging.Logger:
     stream_handler.setFormatter(RedactingFormatter(fields=PII_FIELDS))
 
     logger.addHandler(stream_handler)
-
     return logger
 
 
 def get_db() -> MySQLConnection:
-    """
-    Connects to a MySQL database using credentials from environment variables.
-    Returns:
-        MySQLConnection: A connection object to the database.
-    """
-    username = os.getenv("PERSONAL_DATA_DB_USERNAME", "root")
-    password = os.getenv("PERSONAL_DATA_DB_PASSWORD", "")
-    host = os.getenv("PERSONAL_DATA_DB_HOST", "localhost")
-    db_name = os.getenv("PERSONAL_DATA_DB_NAME")
-
+    """Connects to a MySQL database using environment variables"""
     return mysql.connector.connect(
-        user=username,
-        password=password,
-        host=host,
-        database=db_name
+        host=os.getenv("PERSONAL_DATA_DB_HOST", "localhost"),
+        user=os.getenv("PERSONAL_DATA_DB_USERNAME", "root"),
+        password=os.getenv("PERSONAL_DATA_DB_PASSWORD", ""),
+        database=os.getenv("PERSONAL_DATA_DB_NAME")
     )
+
+
+def main() -> None:
+    """Main function that fetches user data and logs it with redaction"""
+    db = get_db()
+    cursor = db.cursor()
+    cursor.execute("SELECT * FROM users;")
+    logger = get_logger()
+
+    fields = [i[0] for i in cursor.description]  # column names
+
+    for row in cursor:
+        record = "; ".join(f"{field}={value}" for field, value in zip(fields, row)) + ";"
+        logger.info(record)
+
+    cursor.close()
+    db.close()
+
+
+if __name__ == "__main__":
+    main()
