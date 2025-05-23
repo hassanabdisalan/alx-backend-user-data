@@ -1,18 +1,23 @@
 #!/usr/bin/env python3
 """
-Module for filtering personal data from log messages.
+filtered_logger.py
 """
 
-import re
 import logging
+import re
 from typing import List
 
 
-def filter_datum(fields: List[str], redaction: str, message: str, separator: str) -> str:
-    """
-    Obfuscates specified fields in a log message.
-    """
-    return re.sub(rf'({"|".join(fields)})=[^{separator}]*', rf'\1={redaction}', message)
+def filter_datum(fields: List[str], redaction: str, message: str,
+                 separator: str) -> str:
+    """Returns the log message obfuscated with redaction for PII fields"""
+    for field in fields:
+        message = re.sub(f"{field}=.*?{separator}",
+                         f"{field}={redaction}{separator}", message)
+    return message
+
+
+PII_FIELDS = ("name", "email", "phone", "ssn", "password")
 
 
 class RedactingFormatter(logging.Formatter):
@@ -23,15 +28,24 @@ class RedactingFormatter(logging.Formatter):
     SEPARATOR = ";"
 
     def __init__(self, fields: List[str]):
-        """
-        Initialize with fields to redact
-        """
         super(RedactingFormatter, self).__init__(self.FORMAT)
         self.fields = fields
 
     def format(self, record: logging.LogRecord) -> str:
-        """
-        Redact sensitive fields in the log message
-        """
-        record.msg = filter_datum(self.fields, self.REDACTION, record.getMessage(), self.SEPARATOR)
+        record.msg = filter_datum(self.fields, self.REDACTION,
+                                  record.getMessage(), self.SEPARATOR)
         return super().format(record)
+
+
+def get_logger() -> logging.Logger:
+    """Creates and configures a logger"""
+    logger = logging.getLogger("user_data")
+    logger.setLevel(logging.INFO)
+    logger.propagate = False
+
+    stream_handler = logging.StreamHandler()
+    stream_handler.setFormatter(RedactingFormatter(fields=PII_FIELDS))
+
+    logger.addHandler(stream_handler)
+
+    return logger
